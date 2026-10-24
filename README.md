@@ -1,47 +1,43 @@
-# magpie-local-llm
+# magpie-not-enough-llama
 
-magpie 的本地模型 provider。模型不常驻：收到请求时才拉起 `llama-server`，空闲 `idleMinutes` 分钟后自动关闭。对 agent 来说它就是一个普通 provider，模型名是 `local/<模型名>`。
+A [magpie](https://usemagpie.ai) provider that starts a local `llama-server` only when a request needs it and stops it when idle, so the model is never resident yet still looks like an ordinary `local/<model>` provider.
 
-## 安装
+## Install
+
+`llama-server` from [llama.cpp](https://github.com/ggml-org/llama.cpp) has to be on the machine. No npm dependencies.
 
 ```sh
-magpie plugin add ./magpie-local-llm
-magpie plugin options magpie-local-llm '{"bin":"/usr/bin/llama-server","model":"/path/to/model.gguf","extraArgs":["-c","8192","-ngl","99"]}'
+magpie plugin add .
+magpie plugin options magpie-not-enough-llama '{"bin":"/usr/bin/llama-server","model":"/path/to/model.gguf","extraArgs":["-c","8192","-ngl","99"]}'
 ```
 
-插件加载时会自动签入（key 只是占位符），不需要再跑 `magpie plugin login`。
+The plugin signs itself in, so `magpie plugin login` is not needed.
 
-## 配置
+## Usage
 
-`options` 就是插件的第二个参数：
+Agents see the model as `local/<id>`. With `models` empty the id is the file name without its extension: `Some-4B-Q4_K_M.gguf` becomes `local/Some-4B-Q4_K_M`.
 
-```json
-{
-  "bin": "/usr/bin/llama-server",
-  "model": "/home/you/models/Some-4B-Q4_K_M.gguf",
-  "port": 0,
-  "idleMinutes": 5,
-  "startTimeoutSeconds": 180,
-  "extraArgs": ["-c", "8192", "-ngl", "99"],
-  "models": [
-    { "id": "some-4b", "name": "Some 4B", "limit": { "context": 8192, "output": 2048 } }
-  ]
-}
+```sh
+curl http://127.0.0.1:3425/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -d '{"model":"local/some-4b","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-| 选项 | 默认 | 说明 |
+The first request waits for the model to load. `idleMinutes` after the last reply the process gets SIGTERM, then SIGKILL, and the next request starts it again.
+
+### Options
+
+| Option | Default | |
 | --- | --- | --- |
-| `bin` | `llama-server` | llama-server 可执行文件 |
-| `model` | 必填 | gguf 文件路径 |
-| `port` | `0` | 固定端口；`0` 或留空自动挑空闲端口 |
-| `idleMinutes` | `5` | 最后一个请求结束后多久关闭；`0` 表示不自动关闭 |
-| `startTimeoutSeconds` | `180` | 等 `/health` 就绪的上限 |
-| `extraArgs` | `[]` | 原样传给 llama-server |
-| `models` | `[]` | 模型条目；为空时用文件名去扩展名 |
-| `warmup` | `false` | host 加载时先拉起模型 |
+| `bin` | `llama-server` | llama.cpp server binary |
+| `model` | required | GGUF file |
+| `port` | `0` | fixed port; `0` picks a free one |
+| `idleMinutes` | `5` | stop after this much idle time, `0` never stops |
+| `startTimeoutSeconds` | `180` | how long to wait for `/health` |
+| `extraArgs` | `[]` | passed to llama-server as is |
+| `models` | `[]` | `{id, name, limit: {context, output}}`; empty derives from the file name |
+| `warmup` | `false` | load the model when the plugin host starts |
 
-## 说明
+A model that cannot start comes back as a 503 carrying the command line and the tail of llama-server's stderr.
 
-- 冷启动要等模型加载完，首次请求的延迟会比较长；想避免就用 `warmup`。
-- 模型路径错、显存不够时 llama-server 会退出，请求会拿到 503 和它 stderr 的前几十行。
-- 插件 host 退出或重启（含被 SIGKILL）都会关掉自己拉起的 llama-server，不留孤儿进程。
+[中文说明](README.zh.md)

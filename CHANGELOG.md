@@ -1,12 +1,23 @@
 # Changelog
 
-## 0.1.0
+All notable changes to this project will be documented in this file.
 
-- 按需拉起 `llama-server`，`/health` 返回 200 后再转发请求。
-- 空闲回收：最后一个请求结束后计时，SIGTERM 优雅退出，5 秒后 SIGKILL。
-- 并发请求共用同一个启动 Promise，冷启动只起一个进程。
-- 固定端口与自动挑选空闲端口都支持，自动端口先真实 bind 再放开。
-- host 收到 SIGTERM/SIGINT 时先等进行中的请求结束（最多 10 秒），再关掉子进程。
-- 管道看门狗：host 被 SIGKILL 也能在 3 秒内关掉 llama-server，不留孤儿。
-- 启动失败返回 503，错误信息带上实际命令行和 llama-server 的 stderr。
-- `warmup` 选项可在 host 加载时预热模型。
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-10-24
+
+### Added
+
+- A `local` provider for magpie that starts `llama-server` when a request needs it and stops it after `idleMinutes` of idleness.
+- Models named `local/<id>`, the id defaulting to the model file name without its extension.
+- A fixed port, or an automatically chosen one that is bind-tested before it is used.
+- One shared start promise for concurrent requests, so a cold start launches a single process.
+- A `warmup` option that loads the model when the plugin host starts.
+- Failures answered with 503, carrying the command line and the tail of llama-server's stderr.
+- The plugin host stops its llama-server when it exits, and a pipe-held watchdog stops it even when the host is killed with SIGKILL.
+
+[Unreleased]: https://github.com/zerodegress/magpie-not-enough-llama/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/zerodegress/magpie-not-enough-llama/releases/tag/v0.1.0

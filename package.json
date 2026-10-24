@@ -1,5 +1,5 @@
 {
-  "name": "magpie-local-llm",
+  "name": "magpie-not-enough-llama",
   "version": "0.1.0",
   "description": "magpie provider that starts a local llama-server on demand and stops it when idle",
   "type": "module",
@@ -11,7 +11,9 @@
   "files": [
     "index.mjs",
     "README.md",
-    "CHANGELOG.md"
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "keywords": [
     "magpie",
@@ -23,6 +25,7 @@
     "local"
   ],
   "license": "MIT",
+  "author": "zerodegress",
   "magpie": {
     "maxConcurrency": 4
   }

@@ -241,7 +241,7 @@ function createRuntime(options, extraArgs) {
     idleTimer = setTimeout(() => {
       idleTimer = null
       if (active > 0) return
-      console.log(`[local-llm] idle for ${idleMs} ms, stopping llama-server`)
+      console.log(`[local] idle for ${idleMs} ms, stopping llama-server`)
       stop().catch(() => {})
     }, idleMs)
     idleTimer.unref?.()
@@ -256,16 +256,16 @@ function createRuntime(options, extraArgs) {
     parts.push(`command: ${[bin, "-m", modelPath, "--host", "127.0.0.1", "--port", String(port), ...extraArgs].join(" ")}`)
     const log = excerpt()
     if (log) parts.push(log)
-    return `local-llm: ${parts.join("\n")}`
+    return `local: ${parts.join("\n")}`
   }
 
   async function boot() {
-    if (!modelPath) throw new Error('local-llm: the "model" option is not set')
-    if (!existsSync(modelPath)) throw new Error(`local-llm: model file not found: ${modelPath}`)
+    if (!modelPath) throw new Error('local: the "model" option is not set')
+    if (!existsSync(modelPath)) throw new Error(`local: model file not found: ${modelPath}`)
     if (stopping) await stopping
     if (!port) port = await reservePort()
     else if (!(await portIsFree(port))) {
-      if (fixedPort) throw new Error(`local-llm: port ${port} is already in use`)
+      if (fixedPort) throw new Error(`local: port ${port} is already in use`)
       port = await reservePort()
     }
     head = []
@@ -273,7 +273,7 @@ function createRuntime(options, extraArgs) {
     exited = null
     const args = ["-m", modelPath, "--host", "127.0.0.1", "--port", String(port), ...extraArgs]
     const started = Date.now()
-    console.log(`[local-llm] starting ${[bin, ...args].join(" ")}`)
+    console.log(`[local] starting ${[bin, ...args].join(" ")}`)
     const proc = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] })
     child = proc
     proc.stdout.on("data", collect)
@@ -300,7 +300,7 @@ function createRuntime(options, extraArgs) {
       }
       if (await healthOk(port)) {
         ready = child === proc
-        console.log(`[local-llm] ready on 127.0.0.1:${port} after ${Date.now() - started} ms`)
+        console.log(`[local] ready on 127.0.0.1:${port} after ${Date.now() - started} ms`)
         if (active === 0) scheduleIdle()
         return port
       }
@@ -308,7 +308,7 @@ function createRuntime(options, extraArgs) {
     }
     await terminate(proc, "SIGKILL", 0)
     if (child === proc) child = null
-    throw new Error(`local-llm: llama-server was not ready after ${Math.round(startTimeoutMs / 1000)}s on port ${port}\n${excerpt()}`)
+    throw new Error(`local: llama-server was not ready after ${Math.round(startTimeoutMs / 1000)}s on port ${port}\n${excerpt()}`)
   }
 
   function ensureStarted() {
@@ -334,7 +334,7 @@ function createRuntime(options, extraArgs) {
       if (child === proc) child = null
       endGuard()
       if (starting) await starting.catch(() => {})
-      console.log("[local-llm] llama-server stopped")
+      console.log("[local] llama-server stopped")
     })()
     stopping = task
     task.catch(() => {}).finally(() => {
@@ -367,7 +367,7 @@ function createRuntime(options, extraArgs) {
 
   function failureResponse(error) {
     const message = String(error?.message ?? error)
-    console.error(`[local-llm] ${message}`)
+    console.error(`[local] ${message}`)
     const body = JSON.stringify({ error: { message, type: "local_llm_unavailable", code: "local_llm_unavailable" } })
     return new Response(body, { status: 503, headers: { "content-type": "application/json" } })
   }
@@ -395,7 +395,7 @@ function createRuntime(options, extraArgs) {
       response = await send()
     } catch (error) {
       if (request.signal?.aborted || error?.name === "AbortError") throw error
-      console.error(`[local-llm] retrying ${target.pathname} after: ${error?.message ?? error}`)
+      console.error(`[local] retrying ${target.pathname} after: ${error?.message ?? error}`)
       response = await send()
     }
     const outHeaders = new Headers(response.headers)
@@ -434,7 +434,7 @@ function createRuntime(options, extraArgs) {
 
   function warm() {
     return ensureStarted().catch((error) => {
-      console.error(`[local-llm] warmup failed: ${error?.message ?? error}`)
+      console.error(`[local] warmup failed: ${error?.message ?? error}`)
     })
   }
 
@@ -473,7 +473,7 @@ export async function LocalLlmPlugin(input, options = {}) {
   try {
     await input?.client?.auth?.set({ path: { id: PROVIDER }, body: { type: "api", key: "local" } })
   } catch (error) {
-    console.error(`[local-llm] automatic sign-in failed: ${error?.message ?? error}`)
+    console.error(`[local] automatic sign-in failed: ${error?.message ?? error}`)
   }
   if (settings.warmup) {
     const timer = setTimeout(() => runtime.warm(), 0)
