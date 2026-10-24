@@ -10,6 +10,7 @@ const DEFAULT_IDLE_MINUTES = 5
 const DEFAULT_START_TIMEOUT_SECONDS = 180
 const IDLE_SHUTDOWN_GRACE_MS = 5000
 const SIGNAL_SHUTDOWN_GRACE_MS = 1500
+const SIGNAL_DRAIN_MS = 10000
 const HEALTH_POLL_MS = 200
 const HEAD_LINES = 60
 const TAIL_LINES = 40
@@ -131,6 +132,25 @@ function track(stream, done) {
   })
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`
+}
+
+function guardServer(pid, modelPath) {
+  if (!pid || process.platform === "win32") return null
+  const alive = `ps -p ${pid} -o args= 2>/dev/null | grep -F -- ${shellQuote(modelPath)} >/dev/null 2>&1`
+  const script = `cat >/dev/null; ${alive} || exit 0; kill -TERM ${pid} 2>/dev/null; sleep 3; ${alive} && kill -KILL ${pid} 2>/dev/null; exit 0`
+  try {
+    const proc = spawn("/bin/sh", ["-c", script], { stdio: ["pipe", "ignore", "ignore"] })
+    proc.on("error", () => {})
+    proc.stdin.on("error", () => {})
+    proc.unref()
+    return proc
+  } catch {
+    return null
+  }
+}
+
 function terminate(proc, signal, graceMs) {
   return new Promise((done) => {
     if (!proc || proc.exitCode !== null || proc.signalCode !== null) {
@@ -141,18 +161,21 @@ function terminate(proc, signal, graceMs) {
     const finish = () => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      clearTimeout(hard)
+      clearTimeout(bail)
       done()
     }
-    const timer = setTimeout(() => {
+    const hard = setTimeout(() => {
       try {
         proc.kill("SIGKILL")
       } catch {}
     }, graceMs)
+    const bail = setTimeout(finish, graceMs + 2000)
     proc.once("exit", finish)
+    proc.once("close", finish)
     proc.once("error", finish)
     try {
-      proc.kill(signal)
+      if (!proc.kill(signal)) finish()
     } catch {
       finish()
     }
@@ -172,10 +195,21 @@ function createRuntime(options, extraArgs) {
   let starting = null
   let stopping = null
   let active = 0
+  let ready = false
   let idleTimer = null
   let head = []
   let tail = []
   let exited = null
+  let guard = null
+
+  function endGuard() {
+    const proc = guard
+    guard = null
+    if (!proc) return
+    try {
+      proc.stdin.end()
+    } catch {}
+  }
 
   function collect(chunk) {
     for (const raw of String(chunk).split("\n")) {
@@ -246,9 +280,14 @@ function createRuntime(options, extraArgs) {
     proc.stderr.on("data", collect)
     const gone = (reason) => {
       if (!exited) exited = reason
-      if (child === proc) child = null
+      if (child === proc) {
+        child = null
+        ready = false
+      }
+      endGuard()
       clearIdle()
     }
+    guard = guardServer(proc.pid, modelPath)
     proc.once("error", (error) => gone({ error }))
     proc.once("exit", (code, signal) => gone({ code, signal }))
     const deadline = Date.now() + startTimeoutMs
@@ -260,6 +299,7 @@ function createRuntime(options, extraArgs) {
         throw new Error(failureText(reason))
       }
       if (await healthOk(port)) {
+        ready = child === proc
         console.log(`[local-llm] ready on 127.0.0.1:${port} after ${Date.now() - started} ms`)
         if (active === 0) scheduleIdle()
         return port
@@ -273,7 +313,7 @@ function createRuntime(options, extraArgs) {
 
   function ensureStarted() {
     if (stopping) return stopping.then(() => ensureStarted())
-    if (child && !exited && port) return Promise.resolve(port)
+    if (child && ready && !exited && port) return Promise.resolve(port)
     if (starting) return starting
     const task = boot()
     starting = task
@@ -288,9 +328,11 @@ function createRuntime(options, extraArgs) {
     const proc = child
     if (!proc) return Promise.resolve()
     if (stopping) return stopping
+    ready = false
     const task = (async () => {
       await terminate(proc, "SIGTERM", graceMs)
       if (child === proc) child = null
+      endGuard()
       if (starting) await starting.catch(() => {})
       console.log("[local-llm] llama-server stopped")
     })()
@@ -308,6 +350,19 @@ function createRuntime(options, extraArgs) {
     try {
       proc.kill("SIGTERM")
     } catch {}
+  }
+
+  function drain(ms) {
+    if (active === 0) return Promise.resolve()
+    return new Promise((done) => {
+      const deadline = Date.now() + ms
+      const timer = setInterval(() => {
+        if (active > 0 && Date.now() < deadline) return
+        clearInterval(timer)
+        done()
+      }, 100)
+      timer.unref?.()
+    })
   }
 
   function failureResponse(error) {
@@ -391,7 +446,7 @@ function createRuntime(options, extraArgs) {
     return port
   }
 
-  return { prepare, ensureStarted, stop, killNow, handle, warm, baseURL, currentPort }
+  return { prepare, ensureStarted, stop, killNow, drain, handle, warm, baseURL, currentPort }
 }
 
 function installHooks() {
@@ -402,7 +457,10 @@ function installHooks() {
   })
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => {
-      Promise.all([...instances].map((instance) => instance.stop(SIGNAL_SHUTDOWN_GRACE_MS))).finally(() => process.exit(0))
+      const runtimes = [...instances]
+      Promise.all(runtimes.map((instance) => instance.drain(SIGNAL_DRAIN_MS)))
+        .then(() => Promise.all(runtimes.map((instance) => instance.stop(SIGNAL_SHUTDOWN_GRACE_MS))))
+        .finally(() => process.exit(0))
     })
   }
 }

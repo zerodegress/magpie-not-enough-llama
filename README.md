@@ -44,4 +44,4 @@ magpie plugin options magpie-local-llm '{"bin":"/usr/bin/llama-server","model":"
 
 - 冷启动要等模型加载完，首次请求的延迟会比较长；想避免就用 `warmup`。
 - 模型路径错、显存不够时 llama-server 会退出，请求会拿到 503 和它 stderr 的前几十行。
-- 插件 host 退出或重启时会杀掉自己拉起的 llama-server，不留孤儿进程。
+- 插件 host 退出或重启（含被 SIGKILL）都会关掉自己拉起的 llama-server，不留孤儿进程。
