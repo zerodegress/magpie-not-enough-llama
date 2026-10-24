@@ -1,0 +1,29 @@
+{
+  "name": "magpie-local-llm",
+  "version": "0.1.0",
+  "description": "magpie provider that starts a local llama-server on demand and stops it when idle",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./server": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "magpie",
+    "magpie-plugin",
+    "opencode",
+    "opencode-plugin",
+    "llama.cpp",
+    "gguf",
+    "local"
+  ],
+  "license": "MIT",
+  "magpie": {
+    "maxConcurrency": 4
+  }
+}
