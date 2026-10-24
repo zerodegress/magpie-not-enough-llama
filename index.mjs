@@ -442,11 +442,7 @@ function createRuntime(options, extraArgs) {
     return `http://127.0.0.1:${port || 8080}/v1`
   }
 
-  function currentPort() {
-    return port
-  }
-
-  return { prepare, ensureStarted, stop, killNow, drain, handle, warm, baseURL, currentPort }
+  return { prepare, ensureStarted, stop, killNow, drain, handle, warm, baseURL }
 }
 
 function installHooks() {
